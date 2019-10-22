@@ -241,6 +241,12 @@ func (d *dnsResolver) Close() {
 
 func (d *dnsResolver) watcher() {
 	defer d.wg.Done()
+
+	// Sleep to prevent excessive re-resolutions. Incoming resolution requests
+	// will be queued in d.rn below.
+	t := time.NewTimer(0)
+	defer t.Stop()
+
 	for {
 		select {
 		case <-d.ctx.Done():
@@ -267,13 +273,14 @@ func (d *dnsResolver) watcher() {
 		d.cc.NewServiceConfig(sc)
 		d.cc.NewAddress(result)
 
-		// Sleep to prevent excessive re-resolutions. Incoming resolution requests
-		// will be queued in d.rn.
-		t := time.NewTimer(minDNSResRate)
+		if !t.Stop() {
+			<-t.C
+		}
+		t.Reset(minDNSResRate)
+
 		select {
 		case <-t.C:
 		case <-d.ctx.Done():
-			t.Stop()
 			return
 		}
 	}
